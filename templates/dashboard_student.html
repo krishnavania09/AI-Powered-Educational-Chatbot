@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Dashboard</h2>
+<div class="cards">
+  <div class="card"><div class="card-num">{{ total_quizzes }}</div><div class="card-label">Quizzes taken</div></div>
+  <div class="card"><div class="card-num">{{ total_attempts }}</div><div class="card-label">Attempts</div></div>
+  <div class="card"><div class="card-num">{{ avg_score }}%</div><div class="card-label">Avg Score</div></div>
+</div>
+
+<h3>Recent attempts</h3>
+<table class="table">
+  <thead><tr><th>Quiz</th><th>Score</th></tr></thead>
+  <tbody>
+  {% for a in latest %}
+    <tr>
+      <td>{{ quizzes[a.quiz_id].title }}</td>
+      <td>{{ a.score }}/{{ a.total }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="2">No attempts yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
