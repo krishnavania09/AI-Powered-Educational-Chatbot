@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Result — {{ quiz.title }}</h2>
+<p>Your score: <strong>{{ attempt.score }}</strong> / {{ attempt.total }}</p>
+<a class="btn" href="{{ url_for('quiz.list_quizzes') }}">Back to Quizzes</a>
+<a class="btn" href="{{ url_for('dash.student_dashboard') }}">View Dashboard</a>
+{% endblock %}
