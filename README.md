@@ -69,3 +69,30 @@ In alignment with the chatbot's multifaceted functionality, the code encompasses
 The chatbot's responsiveness is rooted in the availability of relevant data. The code ensures a steady supply of such data by harnessing the `load_qa_data` function to read question-answer pairs and associated metadata from a CSV file. This foundation of knowledge facilitates the chatbot's capacity to furnish tailored and informative responses to user queries.
 
 Through the systematic orchestration of these processes, the `send_gptnew` function embodies the chatbot's prowess in intelligently crafting responses, thereby augmenting the educational support experience.
+
+
+# AI-Powered-Educational-Chatbot
+
+Flask-based AI tutor with chat, quizzes, and a student dashboard.
+
+## Quickstart
+
+```bash
+# 1) create venv
+python -m venv .venv
+# Windows
+. .venv/Scripts/activate
+# macOS/Linux
+# source .venv/bin/activate
+
+# 2) install deps
+pip install -r requirements.txt
+
+# 3) set your OpenAI key for this shell
+# Windows (PowerShell)
+$env:OPENAI_API_KEY="sk-..."
+# macOS/Linux
+# export OPENAI_API_KEY="sk-..."
+
+# 4) run
+python app.py
