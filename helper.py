@@ -1,132 +1,96 @@
-import openai
-
-openai.api_key = 'open ai api key'
-
-# Load the model and vectorizer from pkl files
-import pickle
-with open('model.pkl', 'rb') as f:
-    loaded_model = pickle.load(f)
-with open('vectorizer.pkl', 'rb') as f:
-    loaded_vectorizer = pickle.load(f)
-
-# Build the chatbot
-def classify_personality(response):
-    X_test = loaded_vectorizer.transform([response])
-    prediction = loaded_model.predict(X_test)[0]
-    return prediction
-
-import pickle
-from keras.models import load_model
-from keras.utils import pad_sequences
-import re
-import numpy as np
-
-def classify_learning_type(sentence):
-    sentence = clean(sentence)
-    sentence = tokenizer.texts_to_sequences([sentence])
-    sentence = pad_sequences(sentence, maxlen=48, truncating='pre')
-    result = le.inverse_transform(np.argmax(model.predict(sentence), axis=-1))[0]
-    return result
-
-# Text preprocessing function
-def clean(text):
-    global str_punc
-    text = re.sub(r'[^a-zA-Z ]', '', text)
-    text = text.lower()
-    return text    
-
-# Load tokenizer
-with open('tokenizer.pickle', 'rb') as f:
-    tokenizer = pickle.load(f)
-
-# Load label encoder
-with open('labelEncoder.pickle', 'rb') as f:
-    le = pickle.load(f)
-
-# Load model
-model = load_model('LearningStyleClassifier.h5')
-
-import csv
-import pandas as pd
+# helper.py
 import os
+import pickle
+import traceback
+from typing import Optional
 
+MODEL_PATH = os.getenv("LOCAL_MODEL_PATH", "model.pkl")
+VECTORIZER_PATH = os.getenv("LOCAL_VECTORIZER_PATH", "vectorizer.pkl")
 
-# Load the question-answer pairs and temperature from the CSV file into a dictionary
-qa_dict = {}
-with open('question_answer.csv', 'r') as csv_file:
-    reader = csv.DictReader(csv_file)
-    for row in reader:
-        qa_dict[row['prompt']] = {
-            'returnstring': row['returnstring'],
-            'mbti': row['mbti'],
-            'learning': row['learning'],
-            'temperature': float(row['temperature'])
-        }
+model = None
+vectorizer = None
 
-
-
-from SimilarText import load_qa_data , TextSimilarity
-# Load the question-answer data
-qa_dict = load_qa_data('question_answer.csv')
-
-# Create an instance of TextSimilarity
-text_similarity = TextSimilarity()
-
-# Update the embeddings
-vectorstore = text_similarity.update_embeddings(qa_dict)
-
-
-
-
-def send_gptnew(prompt, tem,vecstore=vectorstore):
+def _load_local_artifacts():
+    global model, vectorizer
+    try:
+        with open(MODEL_PATH, "rb") as mf:
+            model = pickle.load(mf)
+    except FileNotFoundError:
+        print("⚠️  model.pkl not found – running in LLM-only mode.")
+        model = None
+    except Exception as e:
+        print(f"⚠️  Failed to load model.pkl ({e}) – falling back to LLM-only mode.")
+        model = None
 
     try:
-        promptsimilarityvalue  = text_similarity.top_similar_prompts(prompt, vecstore)[0][1]
-    # similarprompt  = text_similarity.top_similar_prompts(prompt, vecstore)[0][0]
-    # print("promptsimilarityvalue "+ str(promptsimilarityvalue))
+        with open(VECTORIZER_PATH, "rb") as vf:
+            vectorizer = pickle.load(vf)
+    except FileNotFoundError:
+        if model is not None:
+            print("⚠️  vectorizer.pkl not found – local model will be disabled.")
+        vectorizer = None
+    except Exception as e:
+        print(f"⚠️  Failed to load vectorizer.pkl ({e}) – disabling local model.")
+        vectorizer = None
+
+_load_local_artifacts()
+
+def local_predict(user_text: str) -> Optional[str]:
+    try:
+        if model is None or vectorizer is None:
+            return None
+        X = vectorizer.transform([user_text])
+        pred = getattr(model, "predict", None)
+        if pred is None:
+            return None
+        y = model.predict(X)
+        return str(y[0])
     except Exception:
-        promptsimilarityvalue = 0
-    Databasescore =  "Databasesimilarity score is "+ str(promptsimilarityvalue)
-    if prompt in qa_dict and qa_dict[prompt]['temperature'] == tem:
-        stored_data = qa_dict[prompt]
-        returnstring = Databasescore+" \nFound in Database \n"+stored_data['returnstring']
-    elif promptsimilarityvalue > 0.2 :
-        
-        similar_conversation = text_similarity.top_similar_docs(prompt, vecstore, qa_dict)
-        # generate summary
-        summary = text_similarity.extractive_summary(prompt, similar_conversation)
-        returnstring = Databasescore+" \nSearched from Database \n"+summary 
-    else:
+        print("⚠️  local_predict failed, falling back to LLM.\n" + traceback.format_exc())
+        return None
+
+def _call_openai_chat(messages, model_name: Optional[str] = None) -> str:
+    model_name = model_name or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return "[Configuration error] OPENAI_API_KEY is not set."
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        resp = client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            temperature=0.2,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e_new:
         try:
-            # temprature = tem
-            mbti = str(classify_personality(prompt))
-            learning = str(classify_learning_type(prompt))
-            response = openai.ChatCompletion.create(
-                        model="gpt-3.5-turbo",
-                        messages=[
-                                {"role": "system", "content": """You are Doubt solving teacher who consider all questions to be academic and answer question with strict adherence to the MBTI personality type of student and the Learning way of student in Depth and with high reasoning.
-                                                                Your student has""" + learning  + """way of learning and 
-                                                                the MBTI of your student is """ + mbti},
-                                {"role": "user", "content": prompt},
-                            ],
-                        temperature=tem
-                    )
-            returnstring = Databasescore+" \nYou are a " + mbti + " and prefer a " + learning + " way of learning \n" + str(response.choices[0].message.content)
+            import openai
+            openai.api_key = api_key
+            resp = openai.ChatCompletion.create(
+                model=model_name,
+                messages=messages,
+                temperature=0.2,
+            )
+            return resp["choices"][0]["message"]["content"].strip()
+        except Exception as e_old:
+            return (f"[LLM error] Unable to call OpenAI API.\nNew SDK error: {e_new}\nLegacy SDK error: {e_old}")
 
-            # create dataframe and append row
-            # Update the QA dictionary with the new question-answer pair and temperature
-            qa_dict[prompt] = {
-                'returnstring': returnstring,
-                'mbti': mbti,
-                'learning': learning,
-                'temperature': tem
-            }
-            text_similarity.update_embeddings(qa_dict)
-            # Append the new question-answer pair and temperature to the CSV file
-            row = {'prompt': prompt, 'returnstring': returnstring, 'mbti': mbti, 'learning': learning, 'temperature': tem}
-            df = pd.DataFrame(row, index=[0])
-            df.to_csv('question_answer.csv', mode='a', header=not os.path.exists('question_answer.csv'), index=False)
-        except Exception as e:
-            return e
+def send_gptnew(user_text: str, system_prompt: Optional[str] = None) -> str:
+    local_answer = local_predict(user_text)
+    if local_answer:
+        return local_answer
 
-    return returnstring
+    system_prompt = system_prompt or (
+        "You are a helpful educational assistant. "
+        "Answer clearly and concisely. If code is shown, format it properly."
+    )
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_text},
+    ]
+    return _call_openai_chat(messages)
+
+def answer_user(user_text: str) -> str:
+    return send_gptnew(user_text)

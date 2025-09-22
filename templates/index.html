@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Welcome to AI Tutor</h1>
+  <p>Chat with an AI about your coursework, take quizzes, and track your progress.</p>
+  {% if is_authed %}
+    <a class="btn" href="{{ url_for('chat.chat_page') }}">Open Chat</a>
+  {% else %}
+    <a class="btn" href="{{ url_for('auth.signin') }}">Try now</a>
+  {% endif %}
+{% endblock %}

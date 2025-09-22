@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Chat</h2>
+<div class="chat">
+  <textarea id="prompt" rows="4" placeholder="Ask me anything..."></textarea>
+  <button id="askBtn" class="btn">Ask</button>
+</div>
+<pre id="answer" class="answer"></pre>
+
+<script>
+const askBtn = document.getElementById('askBtn');
+const promptEl = document.getElementById('prompt');
+const answerEl = document.getElementById('answer');
+
+askBtn.onclick = async () => {
+  const prompt = promptEl.value.trim();
+  if (!prompt) return;
+  answerEl.textContent = 'Thinking...';
+  const res = await fetch('{{ url_for("chat.ask") }}', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({prompt})
+  });
+  const data = await res.json();
+  if (!data.ok) {
+    answerEl.textContent = 'Error: ' + (data.error || 'Unknown');
+  } else {
+    answerEl.textContent = data.answer;
+  }
+};
+</script>
+{% endblock %}

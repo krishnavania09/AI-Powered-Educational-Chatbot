@@ -1,106 +1,50 @@
-from flask import Flask, render_template, request, redirect, url_for
-import csv
-import openai
-import speech_recognition as sr
-import pyttsx3
+from flask import Flask, render_template, redirect, url_for
+from flask_login import LoginManager, current_user
+from models import db, User
+from routes.auth import auth_bp
+from routes.chat import chat_bp
+from routes.quiz import quiz_bp
+from routes.dashboard import dash_bp
 
-app = Flask(__name__)
+def create_app():
+    app = Flask(__name__, static_folder='static', template_folder='templates')
+    app.config['SECRET_KEY'] = 'dev-secret-change-me'
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-def check_credentials(username, password):
-    with open('credentials.csv', 'r') as csvfile:
-        csvreader = csv.reader(csvfile)
-        for row in csvreader:
-            if row[0] == username and row[1] == password:
-                return True
-    return False
+    # init db
+    db.init_app(app)
+    with app.app_context():
+        db.create_all()
+        # seed a demo user if none exist
+        if not User.query.filter_by(email='student@example.com').first():
+            User.create_user(email='student@example.com', password='student', is_admin=False)
+        if not User.query.filter_by(email='admin@example.com').first():
+            User.create_user(email='admin@example.com', password='admin', is_admin=True)
 
-def ask_gpt(prompt):
-    response = openai.Completion.create(
-        engine="text-davinci-002",
-        prompt=prompt,
-        max_tokens=1024,
-        n=1,
-        stop=None,
-        temperature=0.5,
-    )
+    # login manager
+    login_manager = LoginManager()
+    login_manager.login_view = 'auth.signin'
+    login_manager.init_app(app)
 
-    message = response.choices[0].text.strip()
-    return message
+    @login_manager.user_loader
+    def load_user(user_id):
+        return User.query.get(int(user_id))
 
-@app.route('/')
-def index():
-    return render_template('content.html')
+    # blueprints
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(chat_bp, url_prefix='/chat')
+    app.register_blueprint(quiz_bp, url_prefix='/quiz')
+    app.register_blueprint(dash_bp, url_prefix='/dashboard')
 
-@app.route('/signin', methods=['GET', 'POST'])
-def signin():
-    error = None
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        if check_credentials(username, password):
-            return redirect(url_for('dashboard'))
-        else:
-            error = 'Invalid username or password.'
-    return render_template('signin.html', error=error)
+    @app.route('/')
+    def home():
+        # original home stays; “Try now” leads to sign in or chat
+        return render_template('index.html', is_authed=current_user.is_authenticated)
 
-@app.route('/dashboard')
-def dashboard():
-    return render_template('dashboard.html')
+    return app
 
-@app.route('/content')
-def content():
-    return render_template('content.html')
-
-from helper import send_gptnew
-
-@app.route('/chat_2', methods=['GET', 'POST'])
-def get_request_json():
-    if request.method == 'POST':
-        if len(request.form['question']) < 1:
-            return render_template(
-                'chat_2.html', question="NULL", res="Question can't be empty!",temperature="NULL")
-        question = request.form['question']
-        temperature = float(request.form['temperature'])
-        print("======================================")
-        print("Receive the question:", question)
-        print("Receive the temperature:",temperature)
-        res = send_gptnew(question.lower().title(),temperature)
-        print("Q: \n", question)
-        print("A: \n", res)
-
-        return render_template('chat_2.html', question=question, res=str(res), temperature=temperature)
-    return render_template('chat_2.html', question=0)
-
-@app.route('/index2')
-def index2():
-    return render_template('index2.html')
-
-@app.route('/voice')
-def voice():
-    r = sr.Recognizer()
-    with sr.Microphone() as source:
-        print("Speak:")
-        audio = r.listen(source)
-
-    try:
-        prompt = r.recognize_google(audio)
-        if prompt.lower() == "bye":
-            print()
-            print("Bye, tumharo din achha beete lala/lali")
-        else:
-            print("You said: " + prompt)
-            bot_response = ask_gpt(prompt)
-            print("Bot:", bot_response)
-
-            engine = pyttsx3.init()
-            engine.say(bot_response)
-            engine.runAndWait()
-        
-    except sr.UnknownValueError:
-        print("Could not understand audio")
-    except sr.RequestError as e:
-        print("Could not request results; {0}".format(e))
-
-    return render_template('index2.html')
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=80)
+    app = create_app()
+    # run on 5000 (not port 80)
+    app.run(host='127.0.0.1', port=5000, debug=True)
